@@ -1,0 +1,11 @@
+__pycache__
+*.py[codz]
+
+build/
+dist/
+*.egg-info/
+*.egg
+
+.ruff_cache/
+
+.env

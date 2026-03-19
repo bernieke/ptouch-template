@@ -1,0 +1,45 @@
+[build-system]
+requires = ['uv_build>=0.7,<0.12']
+build-backend = 'uv_build'
+
+[project]
+name = 'ptouch-template'
+version = "1.0.1"
+readme = 'README.md'
+requires-python = '>= 3.12'
+license = {text='MIT'}
+authors = [{name='Bernard Kerckenaere', email='bernieke@bernieke.com'}]
+dependencies = [
+    'ezdxf',
+    'matplotlib',
+    'pillow',
+    'ptouch',
+    'xdg_base_dirs',
+]
+
+[project.urls]
+homepage = 'https://github.com/bernieke/ptouch-template'
+repository = 'https://github.com/bernieke/ptouch-template'
+
+[project.scripts]
+ptouch-template = 'ptouch_template.cli:main'
+
+[project.optional-dependencies]
+usb = ["pyusb"]
+snmp = ["snmp"]
+
+[dependency-groups]
+dev = ["ruff", "pre-commit"]
+
+[tool.ruff]
+line-length = 79
+preview = true
+
+[tool.ruff.lint]
+select = ['F', 'E', 'W', 'Q']
+
+[tool.ruff.format]
+quote-style = 'single'
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = 'single'
