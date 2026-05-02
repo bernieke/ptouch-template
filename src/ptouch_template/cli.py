@@ -10,6 +10,7 @@ from ptouch_template.ptouch_template import (
     Config,
     PrintError,
     create_template,
+    delete_template,
     describe,
     list_templates,
     print_labels,
@@ -22,6 +23,7 @@ PRINT_HELP = 'Print one or more labels from a template'
 CREATE_HELP = 'Create a template'
 LIST_HELP = 'List available templates'
 DESCRIBE_HELP = 'List the print options and placeholders in a template'
+DELETE_HELP = 'Delete a template'
 SHOW_CONFIG_HELP = 'Show the current configuration'
 SAVE_CONFIG_HELP = ("Save the current arguments to the config file, "
                     "so you won't have to specify them next time")
@@ -220,6 +222,11 @@ def main():
     save_config_parser = subparsers.add_parser(
         'save-config', help=SAVE_CONFIG_HELP, description=SAVE_CONFIG_HELP)
     save_config_parser.set_defaults(func=config.save)
+
+    delete_parser = subparsers.add_parser(
+        'delete', help=DELETE_HELP, description=DELETE_HELP)
+    delete_parser.set_defaults(func=delete_template)
+    delete_parser.add_argument('name', help='Name of the template to delete')
 
     # Extra argument validation
     args = parser.parse_args()

@@ -349,6 +349,19 @@ def list_templates(args):
         print(line)
 
 
+def delete_template(args):
+    if not args.templates:
+        print('No template location configured', file=sys.stderr)
+        sys.exit(1)
+    templates = {
+        name: pathlib.Path(args.templates) / f'{name}.dxf'
+        for name, _ in Template.list_templates(args.templates)
+    }
+    if args.name not in templates:
+        raise PrintError(f'Template {args.name} does not exist')
+    templates[args.name].unlink()
+
+
 def describe(args):
     template = Template(args)
     print('OPTIONS')
