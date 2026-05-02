@@ -8,6 +8,7 @@ import math
 import pathlib
 import socket
 import sys
+import time
 
 import PIL
 import ezdxf
@@ -330,6 +331,7 @@ def print_labels(args):
                 auto_cut=auto_cut,
                 half_cut=half_cut,
             )
+            time.sleep(2)  # Avoid libusb segmentation fault during large batch
 
 
 def create_template(args):
