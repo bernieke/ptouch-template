@@ -175,6 +175,8 @@ Build and publish:
 uv version <version>
 git commit
 git tag v<version>
+git push
+git push --tags
 rm -rf dist
 uv build
 uv publish --token <token>
