@@ -309,6 +309,12 @@ def print_labels(args):
         half_cut = not auto_cut
         print_queue.append((label, feed, auto_cut, half_cut))
 
+    # When not cutting we pass the default margin (print won't accept less)
+    if template.options.no_cut or template.options.mark:
+        margin_mm = 2
+    else:
+        margin_mm = template.options.margin
+
     # Print the labels
     i = 0
     for image, feed, auto_cut, half_cut in print_queue:
@@ -325,7 +331,7 @@ def print_labels(args):
         else:
             printer.print(
                 label=ptouch.Label(image, template.media_class),
-                margin_mm=template.options.margin,
+                margin_mm=margin_mm,
                 high_resolution=template.options.high_resolution,
                 feed=feed,
                 auto_cut=auto_cut,
