@@ -178,7 +178,7 @@ def main():
               '(2:1:\xa05.8/8.8/11.7/17.7/23.6, '
               '3:1:\xa05.2/9.0/11.2/21.0/31.0)'))
     create_parser.add_argument(
-        '--length', '-l', type=int, required=True, help='Label length in mm')
+        '--length', '-l', type=float, required=True, help='Label length in mm')
     # Print options
     create_parser.add_argument(
         '--high-resolution', action='store_true',
