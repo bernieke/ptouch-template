@@ -227,6 +227,13 @@ def print_labels(args):
     if args.csv:
         contents = list(csv.DictReader(args.csv))
         args.csv.close()
+        if args.ignore_extra_columns and template.placeholders:
+            contents = [{
+                key: value
+                for key, value in row.items()
+                if key in template.placeholders
+            } for row in contents]
+        contents = [row for row in contents if any(row.values())]
     elif not template.placeholders:
         contents = [None]
     elif len(template.placeholders) == 1:

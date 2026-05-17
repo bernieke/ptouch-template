@@ -160,6 +160,9 @@ def main():
     print_parser.add_argument(
         '--no-snmp-check', '-n', action='store_true',
         help='Do not check installed media width with SNMP')
+    print_parser.add_argument(
+        '--ignore-extra-columns', action='store_true',
+        help='Ignore extra columns in CSV files')
 
     create_parser = subparsers.add_parser(
         'create', help=CREATE_HELP, description=CREATE_DESCRIPTION,
