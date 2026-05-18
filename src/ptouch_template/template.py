@@ -165,7 +165,7 @@ class Template:
         doc = ezdxf.readfile(path)
         placeholders = {}
         for entity in Template.get_all_text_entities(doc):
-            for raw_placeholder in re.findall(r'{{.+}}', entity.dxf.text):
+            for raw_placeholder in re.findall(r'{{.+?}}', entity.dxf.text):
                 placeholder = raw_placeholder[2:-2].strip()
                 if placeholder not in placeholders:
                     placeholders[placeholder] = []
