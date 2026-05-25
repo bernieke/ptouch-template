@@ -191,7 +191,7 @@ class Template:
             # Create template
             templates = [
                 name for name, _ in Template.list_templates(args.templates)]
-            if args.name in templates:
+            if args.name in templates and not args.overwrite:
                 raise TemplateError(f'Template {args.name} already exists')
             self.name = args.name
             self.path = pathlib.Path(args.templates) / self.filename

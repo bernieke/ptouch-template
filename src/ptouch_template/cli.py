@@ -169,6 +169,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     create_parser.set_defaults(func=create_template)
     create_parser.add_argument('name', help='Name of the template')
+    create_parser.add_argument(
+        '--overwrite', action='store_true',
+        help='Overwrite the template if it already exists')
     # Tape or tube (mutually exclusive)
     media_group = create_parser.add_mutually_exclusive_group(required=True)
     media_group.add_argument(
