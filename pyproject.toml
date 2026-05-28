@@ -4,7 +4,7 @@ build-backend = 'uv_build'
 
 [project]
 name = 'ptouch-template'
-version = "1.1.4"
+version = "1.1.5"
 readme = 'README.md'
 requires-python = '>= 3.12'
 license = {text='MIT'}
@@ -30,6 +30,9 @@ snmp = ["snmp"]
 
 [dependency-groups]
 dev = ["ruff", "pre-commit"]
+
+[tool.uv.build-backend]
+data = {data = 'data'}
 
 [tool.ruff]
 line-length = 79

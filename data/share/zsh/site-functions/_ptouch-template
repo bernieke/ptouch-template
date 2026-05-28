@@ -1,0 +1,94 @@
+#compdef ptouch-template
+
+_ptouch-template() {
+    local curcontext="$curcontext" state line
+    typeset -A opt_args
+
+    _arguments -C \
+        '(-d --debug)'{-d,--debug}'[Create images instead of printing them]' \
+        '(-t --templates)'{-t,--templates}'[Template folder]:directory:_directories' \
+        '(-H --host)'{-H,--host}'[Printer IP address for network connection]:ip:' \
+        '--usb[Use USB connection]:uri:' \
+        '(-p --printer)'{-p,--printer}'[Printer model]:printer:(P900W)' \
+        '--no-compression[Disable TIFF compression]' \
+        '1: :->command' \
+        '*:: :->args'
+
+    case "$state" in
+        command)
+            local commands
+            commands=(
+                'print:Print one or more labels from a template'
+                'create:Create a template'
+                'delete:Delete a template'
+                'list:List available templates'
+                'describe:List the print options and placeholders in a template'
+                'show-config:Show the current configuration'
+                'save-config:Save the current arguments to the config file'
+            )
+            _describe -t commands 'ptouch-template command' commands
+            ;;
+        args)
+            case "$line[1]" in
+                print)
+                    _ptouch-template_print
+                    ;;
+                create)
+                    _ptouch-template_create
+                    ;;
+                describe|delete)
+                    _ptouch-template_describe_delete
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_ptouch-template_print() {
+    local curcontext="$curcontext" state line
+    local -a templates
+
+    # Get template names for completion
+    templates=(${(f)"$(ptouch-template list --only-names 2>/dev/null)"})
+
+    _arguments -C \
+        '--csv[Path to CSV file]:csv file:_files -g "*.csv"' \
+        '(-c --copies)'{-c,--copies}'[Number of copies]:copies:' \
+        '(-n --no-snmp-check)'{-n,--no-snmp-check}'[Do not check installed media width with SNMP]' \
+        '--ignore-extra-columns[Ignore extra columns in CSV files]' \
+        '1:template:->template' \
+        '*:contents:'
+
+    case "$state" in
+        template)
+            _alternative \
+                "templates:template name:((${(@q)templates}))" \
+                'files:DXF file:_files -g "*.dxf"'
+            ;;
+    esac
+}
+
+_ptouch-template_create() {
+    _arguments -C \
+        '--overwrite[Overwrite the template if it already exists]' \
+        '(-t --tape-width)'{-t,--tape-width}'[Laminated tape width in mm]:width:(3.5 6 9 12 18 24 36)' \
+        '(-T --tube-width)'{-T,--tube-width}'[Heat shrink tube diameter in mm]:width:(5.8 8.8 11.7 17.7 23.6 5.2 9.0 11.2 21.0 31.0)' \
+        '(-l --length)'{-l,--length}'[Label length in mm]:length:' \
+        '--high-resolution[Enable high resolution mode]' \
+        '(-m --margin)'{-m,--margin}'[Margin in mm]:margin:' \
+        '--no-feed[Do not feed and cut after the last label]' \
+        '--full-cut[Use full cuts between labels instead of half cuts]' \
+        '--no-cut[Do not cut at all between labels]' \
+        '--mark[Add a vertical line between labels instead of cutting]' \
+        ':template name:'
+}
+
+_ptouch-template_describe_delete() {
+    local -a templates
+    templates=(${(f)"$(ptouch-template list --only-names 2>/dev/null)"})
+    _alternative \
+        "templates:template name:((${(@q)templates}))" \
+        'files:DXF file:_files -g "*.dxf"'
+}
+
+_ptouch-template "$@"
