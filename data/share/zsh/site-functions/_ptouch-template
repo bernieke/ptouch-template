@@ -73,7 +73,7 @@ _ptouch-template_create() {
         '--overwrite[Overwrite the template if it already exists]' \
         '(-t --tape-width)'{-t,--tape-width}'[Laminated tape width in mm]:width:(3.5 6 9 12 18 24 36)' \
         '(-T --tube-width)'{-T,--tube-width}'[Heat shrink tube diameter in mm]:width:(5.8 8.8 11.7 17.7 23.6 5.2 9.0 11.2 21.0 31.0)' \
-        '(-l --length)'{-l,--length}'[Label length in mm]:length:' \
+        '(-l --length)'{-l,--length}'[Label length in mm or "auto"]:length:(auto)' \
         '--high-resolution[Enable high resolution mode]' \
         '(-m --margin)'{-m,--margin}'[Margin in mm]:margin:' \
         '--no-feed[Do not feed and cut after the last label]' \

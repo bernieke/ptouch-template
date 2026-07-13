@@ -69,20 +69,24 @@ class Options:
             height = Template.get_printable_height(
                 Printer, self.media_type, self.media_width)
             height_mm = px_to_mm(height, dpi)
-            width_mm = args.length
-            width = mm_to_px(width_mm, dpi)
             doc = ezdxf.new('R2000', units=MM)
             doc.appids.new('ptouch-template')
             msp = doc.modelspace()
-            rectangle = msp.add_polyline2d([
-                (0, 0),
-                (0, height_mm),
-                (width_mm, height_mm),
-                (width_mm, 0),
-                (0, 0),
-            ], dxfattribs={'color': 2})
+            if args.length == 'auto':
+                width = 0
+                marker = msp.add_line((0, 0), (0, height_mm),
+                                      dxfattribs={'color': 2})
+            else:
+                width = mm_to_px(args.length, dpi)
+                marker = msp.add_polyline2d([
+                    (0, 0),
+                    (0, height_mm),
+                    (args.length, height_mm),
+                    (args.length, 0),
+                    (0, 0),
+                ], dxfattribs={'color': 2})
             with ezdxf.entities.xdata.XDataUserDict.entity(
-                rectangle, name='options', appid='ptouch-template') as xdata:
+                marker, name='options', appid='ptouch-template') as xdata:
                 for arg, value in vars(self).items():
                     if value is None:
                         value = ''
@@ -92,7 +96,7 @@ class Options:
                         value = value.value
                     xdata[arg] = value
             with ezdxf.entities.xdata.XDataUserDict.entity(
-                rectangle, name='template', appid='ptouch-template') as xdata:
+                marker, name='template', appid='ptouch-template') as xdata:
                 xdata['width'] = width
                 xdata['height'] = height
                 xdata['dpi'] = dpi
@@ -198,7 +202,8 @@ class Template:
             self.options = Options(self.path, args)
             self.placeholders = []
             self.dpi = self.Printer.RESOLUTION_DPI
-            self.width = mm_to_px(args.length, self.dpi)
+            self.width = (0 if args.length == 'auto'
+                          else mm_to_px(args.length, self.dpi))
             self.height = Template.get_printable_height(
                 self.Printer, self.options.media_type,
                 self.options.media_width)

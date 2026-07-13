@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 
 import argparse
+import pathlib
 import tempfile
 import unittest
 import unittest.mock
 
+import ezdxf
 import PIL
 
 from ptouch_template.cli import main
@@ -100,6 +102,9 @@ class PtouchTemplateTestCase(unittest.TestCase):
             base_create_args + ['--no-cut'],
             base_args + ['create', 'x', '-t', '18', '-l', '20', '--full-cut'],
             base_create_args + ['--mark', '--no-feed'],
+            base_args + ['create', 'x', '-t', '18', '-l', 'auto'],
+            base_args + ['create', 'x', '-t', '18', '-l', 'auto',
+                         '--full-cut'],
         ]:
             with tempfile.TemporaryDirectory() as templates_dir:
                 args = ['ptouch-template', '-t', templates_dir] + good_args
@@ -120,6 +125,8 @@ class PtouchTemplateTestCase(unittest.TestCase):
             base_create_args + ['--mark', '--full-cut'],
             base_create_args + ['--mark', '--no-cut'],
             base_create_args + ['--no-cut', '--full-cut'],
+            base_args + ['create', 'x', '-t', '18', '-l', '0'],
+            base_args + ['create', 'x', '-t', '18', '-l', '-5'],
         ]:
             with tempfile.TemporaryDirectory() as templates_dir:
                 args = ['ptouch-template', '-t', templates_dir] + bad_args
@@ -155,41 +162,70 @@ class PtouchTemplateTestCase(unittest.TestCase):
                                 return_value=mock_conn),
             unittest.mock.patch('ptouch.PTP900W.print', mock_print),
         ):
-            for cut in [None, 'half-cut', 'full-cut', 'mark', 'no-cut']:
-                for no_feed in [True, False]:
-                    for margin in [0, 1, 2, 3]:
-                        if margin < 2 and cut in ['half-cut', 'full-cut']:
-                            continue
-                        if no_feed and cut not in ['no-cut', 'mark']:
-                            continue
-                        with tempfile.TemporaryDirectory() as templates_dir:
-                            args = self.args()
-                            args.templates = templates_dir
-                            args.name = 'test'
-                            args.tape_width = 18
-                            args.length = 20
-                            args.margin = margin
-                            args.no_feed = no_feed
-                            args.full_cut = (cut == 'full-cut')
-                            args.mark = (cut == 'mark')
-                            args.no_cut = (cut == 'no-cut')
-                            pt.create_template(args)
-                            print_args = argparse.Namespace(
-                                debug=False,
-                                usb=True,
-                                host=None,
-                                no_compression=False,
-                                templates=templates_dir,
-                                template=args.name,
-                                copies=3,
-                                contents=[],
-                                csv=None,
-                            )
-                            pt.print_labels(print_args)
-                            self.verify_print_results(args, printed_labels)
-                            printed_labels.clear()
+            for length in [20, 'auto']:
+                for cut in [None, 'half-cut', 'full-cut', 'mark', 'no-cut']:
+                    for no_feed in [True, False]:
+                        for margin in [0, 1, 2, 3]:
+                            if margin < 2 and cut in ['half-cut', 'full-cut']:
+                                continue
+                            if no_feed and cut not in ['no-cut', 'mark']:
+                                continue
+                            self.check_printing(printed_labels, length, cut,
+                                                no_feed, margin)
 
-    def verify_print_results(self, args, printed_labels):
+    def check_printing(self, printed_labels, length, cut, no_feed, margin):
+        with tempfile.TemporaryDirectory() as templates_dir:
+            args = self.args()
+            args.templates = templates_dir
+            args.name = 'test'
+            args.tape_width = 18
+            args.length = length
+            args.margin = margin
+            args.no_feed = no_feed
+            args.full_cut = (cut == 'full-cut')
+            args.mark = (cut == 'mark')
+            args.no_cut = (cut == 'no-cut')
+            pt.create_template(args)
+            if length == 'auto':
+                path = pathlib.Path(templates_dir) / 'test.dxf'
+                doc = ezdxf.readfile(path)
+                (doc.modelspace()
+                 .add_text('{{text}}', height=4)
+                 .set_placement((0, 0)))
+                doc.saveas(path)
+                contents = ['long enough', '', 'short']
+                copies = 1
+            else:
+                contents = []
+                copies = 3
+            print_args = argparse.Namespace(
+                debug=False,
+                usb=True,
+                host=None,
+                no_compression=False,
+                templates=templates_dir,
+                template=args.name,
+                copies=copies,
+                contents=contents,
+                csv=None,
+            )
+            pt.print_labels(print_args)
+            self.verify_print_results(args, printed_labels, contents, copies)
+            printed_labels.clear()
+
+    def pad_full_cut(self, template, image):
+        # Mirror the full-cut minimum-length padding applied when printing
+        min_px = mm_to_px(
+            pt.MIN_FULL_CUT_WIDTH.get(template.options.printer, 0),
+            template.dpi)
+        if image.width >= min_px:
+            return image
+        padded = PIL.Image.new('RGB', size=(min_px, template.height),
+                               color=(255, 255, 255))
+        padded.paste(image, (0, 0))
+        return padded
+
+    def verify_print_results(self, args, printed_labels, contents, copies):
         def debug(args):
             parts = [
                 f'{attr}: {getattr(args, attr)}'
@@ -208,45 +244,59 @@ class PtouchTemplateTestCase(unittest.TestCase):
 
         template = Template(argparse.Namespace(
             templates=args.templates, template=args.name))
-        image = pt.create_label(template, None)
+
+        # Reconstruct the labels the same way print_labels expands contents,
+        # dropping blank labels that render no content (auto templates)
+        rows = (list(contents) if template.placeholders else [None]) * copies
+        labels = [
+            label
+            for label in (pt.create_label(template, row) for row in rows)
+            if label is not None
+        ]
+        last = len(labels) - 1
 
         if args.no_cut or args.mark:
-            # Concatenate with filler or mark
+            # Concatenate with filler or mark, using actual per-label widths
             if args.margin:
                 if args.no_cut:
                     filler = pt.create_blank(template)
                 else:
                     filler = pt.create_mark(template)
-                images = [image, filler, image, filler, image]
+                images = []
+                for i, label in enumerate(labels):
+                    if i:
+                        images.append(filler)
+                    images.append(label)
                 if args.no_feed:
                     margin_px = mm_to_px(template.options.margin, template.dpi)
                     images.append(PIL.Image.new(
-                        'RGB', size=(margin_px, image.height),
+                        'RGB', size=(margin_px, template.height),
                         color=(255, 255, 255)))
                 image = concatenate(images)
             else:
-                width = image.width
-                image = concatenate([image, image, image])
+                image = concatenate(labels)
                 if args.mark:
-                    PIL.ImageDraw.Draw(image).line(
-                        [(width - 1, 0), (width - 1, image.height)],
-                        fill=0, width=2)
-                    PIL.ImageDraw.Draw(image).line(
-                        [(width * 2 - 1, 0), (width * 2 - 1, image.height)],
-                        fill=0, width=2)
+                    start = 0
+                    for label in labels[:-1]:
+                        start += label.width
+                        PIL.ImageDraw.Draw(image).line(
+                            [(start - 1, 0), (start - 1, image.height)],
+                            fill=0, width=2)
             if args.no_feed:
                 PIL.ImageDraw.Draw(image).line(
                     [(image.width - 1, 0), (image.width - 1, image.height)],
                     fill=0, width=1)
             expected = [(image, not args.no_feed, False, False)]
         elif args.full_cut:
-            expected = [(image, False, True, False),
-                        (image, False, True, False),
-                        (image, True, True, False)]
+            expected = [
+                (self.pad_full_cut(template, label), i == last, True, False)
+                for i, label in enumerate(labels)
+            ]
         else:
-            expected = [(image, False, False, True),
-                        (image, False, False, True),
-                        (image, True, False, True)]
+            expected = [
+                (label, i == last, False, True)
+                for i, label in enumerate(labels)
+            ]
 
         self.assertEqual(len(printed_labels), len(expected), debug(args))
         for _expected, printed in zip(expected, printed_labels):

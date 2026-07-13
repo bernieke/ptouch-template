@@ -7,6 +7,7 @@ import ptouch.__main__
 import xdg_base_dirs
 
 from ptouch_template.ptouch_template import (
+    MIN_FULL_CUT_WIDTH,
     Config,
     PrintError,
     create_template,
@@ -45,11 +46,13 @@ CREATE_DESCRIPTION = f"""{CREATE_HELP}.
 The tape or tube width must be provided.
 The configured printer will then determine the height of the printable area.
 
-Also the desired length of the label must be provided.
+Also the desired length of the label must be provided, in mm or "auto".
 
-This area will be marked in the template with a (not printed) yellow rectangle.
+For a fixed length the printable area is marked in the template
+with a (not printed) yellow rectangle.
+For "auto" only the left edge is marked with a yellow vertical line.
 
-There will be a blank margin to either side of this rectangle.
+There will be a blank margin to either side of the printable area.
 When printing with cutting it can be no less than, and defaults to, 2mm.
 When printing with --no-cut or --mark it can be less, or even zero.
 
@@ -68,7 +71,9 @@ Tape notes:
 * And to not half cut extra strong adhesive tapes to avoid adhesive buildup
 
 When editing the template:
-* Do not remove the yellow rectangle, and do not put anything outside of it
+* Do not remove the yellow rectangle or guide line
+* For a fixed length do not put anything outside of the rectangle
+* For "auto" length keep everything to the right of the guide line
 * Add "{{<placeholder>}}" texts to be replaced during printing
   (fi. "{{first_name}} {{last_name}}", without the surrounding double quotes)
 * If you want to be able to replace placeholers with multi-line texts,
@@ -79,15 +84,22 @@ PRINTERS = list(ptouch.__main__.PRINTER_TYPES.keys())
 TAPE_WIDTHS = list(ptouch.__main__.TAPE_WIDTHS.keys())
 TUBE_WIDTHS = list(ptouch.__main__.TUBE_WIDTHS.keys())
 
-# Labels with a width smaller than this cannot be printed with a full cut
-MIN_FULL_CUT_WIDTH = {
-    'P900W': 18.06,
-}
-
 
 def error(msg):
     print(msg, file=sys.stderr)
     sys.exit(1)
+
+
+def length(value):
+    if value == 'auto':
+        return 'auto'
+    try:
+        value = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError('Length must be a number or "auto"')
+    if value <= 0:
+        raise argparse.ArgumentTypeError('Length must be greater than 0')
+    return value
 
 
 def main():
@@ -184,7 +196,8 @@ def main():
               '(2:1:\xa05.8/8.8/11.7/17.7/23.6, '
               '3:1:\xa05.2/9.0/11.2/21.0/31.0)'))
     create_parser.add_argument(
-        '--length', '-l', type=float, required=True, help='Label length in mm')
+        '--length', '-l', type=length, required=True, metavar='LENGTH',
+        help='Label length in mm or "auto"')
     # Print options
     create_parser.add_argument(
         '--high-resolution', action='store_true',
@@ -248,6 +261,7 @@ def main():
             error('--margin must be at least 2mm when cutting')
         if (
             args.full_cut
+            and not args.length == 'auto'
             and args.length < MIN_FULL_CUT_WIDTH.get(args.printer, 0)
         ):
             error(f'--full-cut requires a label length of at least '

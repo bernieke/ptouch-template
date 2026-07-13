@@ -51,6 +51,10 @@ PIN_CONFIGS[ptouch.tape.Tape24mm].left_pins = 128
 PIN_CONFIGS[ptouch.tape.Tape24mm].right_pins = 112
 PIN_CONFIGS[ptouch.tape.Tape36mm].left_pins = 58
 PIN_CONFIGS[ptouch.tape.Tape36mm].right_pins = 48
+# Labels with a width smaller than this cannot be printed with a full cut
+MIN_FULL_CUT_WIDTH = {
+    'P900W': 18.06,
+}
 
 
 class PrintError(Exception):
@@ -124,8 +128,8 @@ def create_label(template, contents):
     # * str for single placeholder
     # * dict for multiple placeholders
     if (
-        (not contents and template.placeholders)
-        or (contents and not template.placeholders)
+        (contents is None and template.placeholders)
+        or (contents is not None and not template.placeholders)
         or (isinstance(contents, dict)
             and not len(contents) == len(template.placeholders))
         or (isinstance(contents, str) and not len(template.placeholders) == 1)
@@ -159,14 +163,22 @@ def create_label(template, contents):
             break
     # Render to image
     context = ezdxf.addons.drawing.RenderContext(doc)
-    width_in = px_to_in(template.width, template.dpi)
     height_in = px_to_in(template.height, template.dpi)
-    figure = matplotlib.pyplot.figure(figsize=(width_in, height_in))
+    figure = matplotlib.pyplot.figure(figsize=(1, height_in))
     axis = figure.add_axes([0, 0, 1, 1])
     backend = ezdxf.addons.drawing.matplotlib.MatplotlibBackend(axis)
     frontend = ezdxf.addons.drawing.Frontend(context, backend, config=config)
     frontend.draw_layout(msp, finalize=False)
-    axis.set_xlim(0, px_to_mm(template.width, template.dpi))
+    if template.width:
+        width = template.width
+    elif math.isfinite(axis.dataLim.x1) and axis.dataLim.x1 > 0:
+        width = mm_to_px(axis.dataLim.x1, template.dpi)
+    else:
+        # An auto label with no drawable content is skipped
+        matplotlib.pyplot.close(figure)
+        return None
+    figure.set_size_inches(px_to_in(width, template.dpi), height_in)
+    axis.set_xlim(0, px_to_mm(width, template.dpi))
     axis.set_ylim(0, px_to_mm(template.height, template.dpi))
     axis.set_axis_off()
     with io.BytesIO() as f:
@@ -259,62 +271,72 @@ def print_labels(args):
     # and neither affects the last label printed
     print_queue = []
 
-    # Prepare the image and flags for the no cutting options
+    # Render the labels
+    labels = [create_label(template, _contents) for _contents in contents]
+    # Drop empty labels
+    labels = [label for label in labels if label is not None]
+    # When not cutting we concatenate the labels with fillers inbetween
     if template.options.no_cut or template.options.mark:
-        n = len(contents)
-        if template.options.margin:
-            if template.options.no_cut:
-                filler = create_blank(template)
+        if labels:
+            if template.options.margin:
+                if template.options.no_cut:
+                    filler = create_blank(template)
+                else:
+                    filler = create_mark(template)
             else:
-                filler = create_mark(template)
-            total_width = template.width * n + filler.width * (n - 1)
-            if template.options.no_feed:
-                total_width += math.ceil(filler.width / 2)
-            width_with_filler = template.width + filler.width
-        else:
-            total_width = template.width * n
-            width_with_filler = template.width
-        image = PIL.Image.new(
-            'RGB', size=(total_width, template.height), color=(255, 255, 255))
-        print_queue.append((image, not template.options.no_feed, False, False))
-
-    for n, _contents in enumerate(contents, start=1):
-        is_first = (n == 1)
-        is_last = (n == len(contents))
-        label = create_label(template, _contents)
-
-        # When not cutting we concatenate the labels with fillers inbetween
-        if template.options.no_cut or template.options.mark:
-            # For --mark draw a 2px line between labels if no margin (filler)
-            if not template.options.margin and template.options.mark:
-                if not is_first:
-                    PIL.ImageDraw.Draw(label).line(
-                        [(0, 0), (0, label.height)], fill=0, width=1)
-                if not is_last:
-                    PIL.ImageDraw.Draw(label).line(
-                        [(label.width - 1, 0),
-                         (label.width - 1, label.height)],
-                        fill=0, width=1)
-            # And the label to the image
-            start = width_with_filler * (n - 1)
-            image.paste(label, (start, 0))
-            if is_last:
-                # If --no-feed draw a 1px cut line at the end
+                filler = None
+            total_width = sum(label.width for label in labels)
+            if filler:
+                total_width += filler.width * (len(labels) - 1)
                 if template.options.no_feed:
-                    PIL.ImageDraw.Draw(image).line(
-                        [(image.width - 1, 0),
-                         (image.width - 1, image.height)],
-                        fill=0, width=1)
-            elif template.options.margin:
-                # Add the filler
-                image.paste(filler, (start + template.width, 0))
-            continue
-
+                    total_width += math.ceil(filler.width / 2)
+            size = (total_width, template.height)
+            image = PIL.Image.new('RGB', size=size, color=(255, 255, 255))
+            start = 0
+            for n, label in enumerate(labels, start=1):
+                is_first = (n == 1)
+                is_last = (n == len(labels))
+                # For --mark draw a 2px line between labels when no margin
+                if filler is None and template.options.mark:
+                    if not is_first:
+                        PIL.ImageDraw.Draw(label).line(
+                            [(0, 0), (0, label.height)], fill=0, width=1)
+                    if not is_last:
+                        PIL.ImageDraw.Draw(label).line(
+                            [(label.width - 1, 0),
+                             (label.width - 1, label.height)],
+                            fill=0, width=1)
+                image.paste(label, (start, 0))
+                start += label.width
+                if not is_last and filler:
+                    image.paste(filler, (start, 0))
+                    start += filler.width
+            # If --no-feed draw a 1px cut line at the end
+            if template.options.no_feed:
+                PIL.ImageDraw.Draw(image).line(
+                    [(image.width - 1, 0), (image.width - 1, image.height)],
+                    fill=0, width=1)
+            feed = not template.options.no_feed
+            auto_cut = half_cut = False
+            print_queue.append((image, feed, auto_cut, half_cut))
+    else:
         # Otherwise we add the label to the print queue with the proper flags
-        feed = is_last
-        auto_cut = template.options.full_cut
-        half_cut = not auto_cut
-        print_queue.append((label, feed, auto_cut, half_cut))
+        for n, label in enumerate(labels, start=1):
+            is_last = (n == len(labels))
+            if template.options.full_cut:
+                # A full cut requires a minimum label length
+                min_width = MIN_FULL_CUT_WIDTH.get(template.options.printer, 0)
+                min_px = mm_to_px(min_width, template.dpi)
+                if label.width < min_px:
+                    size = (min_px, template.height)
+                    color = (255, 255, 255)
+                    padded = PIL.Image.new(mode='RGB', size=size, color=color)
+                    padded.paste(label, (0, 0))
+                    label = padded
+            feed = is_last
+            auto_cut = template.options.full_cut
+            half_cut = not auto_cut
+            print_queue.append((label, feed, auto_cut, half_cut))
 
     # When not cutting we pass the default margin (print won't accept less)
     if template.options.no_cut or template.options.mark:

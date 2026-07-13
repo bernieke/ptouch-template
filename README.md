@@ -70,11 +70,13 @@ Create a template.
 The tape or tube width must be provided.
 The configured printer will then determine the height of the printable area.
 
-Also the desired length of the label must be provided.
+Also the desired length of the label must be provided, in mm or "auto".
 
-This area will be marked in the template with a (not printed) yellow rectangle.
+For a fixed length the printable area is marked in the template
+with a (not printed) yellow rectangle.
+For "auto" only the left edge is marked with a yellow vertical line.
 
-There will be a blank margin to either side of this rectangle.
+There will be a blank margin to either side of the printable area.
 When printing with cutting it can be no less than, and defaults to, 2mm.
 When printing with --no-cut or --mark it can be less, or even zero.
 
@@ -93,7 +95,9 @@ Tape notes:
 * And to not half cut extra strong adhesive tapes to avoid adhesive buildup
 
 When editing the template:
-* Do not remove the yellow rectangle, and do not put anything outside of it
+* Do not remove the yellow rectangle or guide line
+* For a fixed length do not put anything outside of the rectangle
+* For "auto" length keep everything to the right of the guide line
 * Add "{<placeholder>}" texts to be replaced during printing
   (fi. "{first_name} {last_name}", without the surrounding double quotes)
 * If you want to be able to replace placeholers with multi-line texts,
@@ -110,7 +114,7 @@ options:
                         Heat shrink tube diameter in mm
                         (2:1: 5.8/8.8/11.7/17.7/23.6,
                         3:1: 5.2/9.0/11.2/21.0/31.0)
-  --length, -l LENGTH   Label length in mm
+  --length, -l LENGTH   Label length in mm or "auto"
   --high-resolution     Enable high resolution mode
   --margin, -m MM       Margin in mm (default, and minimum when cutting: 2mm)
   --no-feed             Do not feed and cut after the last label (requires
