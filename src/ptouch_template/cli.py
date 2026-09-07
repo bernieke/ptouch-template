@@ -13,6 +13,7 @@ from ptouch_template.ptouch_template import (
     create_template,
     delete_template,
     describe,
+    edit_template,
     list_templates,
     print_labels,
 )
@@ -22,6 +23,7 @@ CONFIG_FILE = xdg_base_dirs.xdg_config_home() / 'ptouch-template.ini'
 
 PRINT_HELP = 'Print one or more labels from a template'
 CREATE_HELP = 'Create a template'
+EDIT_HELP = 'Edit template options'
 LIST_HELP = 'List available templates'
 DESCRIBE_HELP = 'List the print options and placeholders in a template'
 DELETE_HELP = 'Delete a template'
@@ -78,6 +80,15 @@ When editing the template:
   (fi. "{{first_name}} {{last_name}}", without the surrounding double quotes)
 * If you want to be able to replace placeholers with multi-line texts,
   make sure to use a multi-line DXF text (MTEXT instead of TEXT)
+"""
+
+EDIT_DESCRIPTION = f"""{EDIT_HELP}.
+
+Change the options of an existing template while keeping its tape/tube width
+and its content (texts and placeholders).
+
+Options are applied exactly as for "create": any option not given reverts to
+its default (e.g. omitting a cut option restores half cuts).
 """
 
 PRINTERS = list(ptouch.__main__.PRINTER_TYPES.keys())
@@ -184,6 +195,11 @@ def main():
     create_parser.add_argument(
         '--overwrite', action='store_true',
         help='Overwrite the template if it already exists')
+    edit_parser = subparsers.add_parser(
+        'edit', help=EDIT_HELP, description=EDIT_DESCRIPTION,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    edit_parser.set_defaults(func=edit_template)
+    edit_parser.add_argument('name', help='Name of the template to edit')
     # Tape or tube (mutually exclusive)
     media_group = create_parser.add_mutually_exclusive_group(required=True)
     media_group.add_argument(
@@ -195,32 +211,33 @@ def main():
         help=('Heat shrink tube diameter in mm '
               '(2:1:\xa05.8/8.8/11.7/17.7/23.6, '
               '3:1:\xa05.2/9.0/11.2/21.0/31.0)'))
-    create_parser.add_argument(
-        '--length', '-l', type=length, required=True, metavar='LENGTH',
-        help='Label length in mm or "auto"')
-    # Print options
-    create_parser.add_argument(
-        '--high-resolution', action='store_true',
-        help='Enable high resolution mode')
-    create_parser.add_argument(
-        '--margin', '-m', type=float, metavar='MM', default=2,
-        help='Margin in mm (default, and minimum when cutting: 2mm)')
-    create_parser.add_argument(
-        '--no-feed', action='store_true',
-        help=('Do not feed and cut after the last label '
-              '(requires either --no-cut or --mark)'))
-    # Cut options (mutually exclusive)
-    cut_group = create_parser.add_mutually_exclusive_group()
-    cut_group.add_argument(
-        '--full-cut', action='store_true',
-        help=('Use full cuts between labels instead of half cuts '
-              '(recommended for strong adhesive tapes)'))
-    cut_group.add_argument(
-        '--no-cut', action='store_true',
-        help='Do not cut at all between labels (e.g. for patch panels)')
-    cut_group.add_argument(
-        '--mark', action='store_true',
-        help='Add a vertical line between labels instead of cutting')
+    for subparser in [create_parser, edit_parser]:
+        subparser.add_argument(
+            '--length', '-l', type=length, required=True, metavar='LENGTH',
+            help='Label length in mm or "auto"')
+        # Print options
+        subparser.add_argument(
+            '--high-resolution', action='store_true',
+            help='Enable high resolution mode')
+        subparser.add_argument(
+            '--margin', '-m', type=float, metavar='MM', default=2,
+            help='Margin in mm (default, and minimum when cutting: 2mm)')
+        subparser.add_argument(
+            '--no-feed', action='store_true',
+            help=('Do not feed and cut after the last label '
+                  '(requires either --no-cut or --mark)'))
+        # Cut options (mutually exclusive)
+        cut_group = subparser.add_mutually_exclusive_group()
+        cut_group.add_argument(
+            '--full-cut', action='store_true',
+            help=('Use full cuts between labels instead of half cuts '
+                  '(recommended for strong adhesive tapes)'))
+        cut_group.add_argument(
+            '--no-cut', action='store_true',
+            help='Do not cut at all between labels (e.g. for patch panels)')
+        cut_group.add_argument(
+            '--mark', action='store_true',
+            help='Add a vertical line between labels instead of cutting')
 
     list_parser = subparsers.add_parser(
         'list', help=LIST_HELP, description=LIST_HELP)
@@ -254,7 +271,7 @@ def main():
             error('--copies must be at least 1')
         if args.csv and args.contents:
             error('--csv and contents are mutually exclusive')
-    elif args.command == 'create':
+    elif args.command in ['create', 'edit']:
         if args.no_feed and not (args.no_cut or args.mark):
             error('--no-feed requires either --no-cut or --mark')
         if not args.no_cut and not args.mark and args.margin < 2:

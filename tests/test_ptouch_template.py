@@ -127,6 +127,9 @@ class PtouchTemplateTestCase(unittest.TestCase):
             base_create_args + ['--no-cut', '--full-cut'],
             base_args + ['create', 'x', '-t', '18', '-l', '0'],
             base_args + ['create', 'x', '-t', '18', '-l', '-5'],
+            base_args + ['edit'],
+            base_args + ['edit', 'x'],
+            base_args + ['edit', 'x', '-l', 'auto', '-T', '18'],
         ]:
             with tempfile.TemporaryDirectory() as templates_dir:
                 args = ['ptouch-template', '-t', templates_dir] + bad_args
@@ -148,6 +151,57 @@ class PtouchTemplateTestCase(unittest.TestCase):
         args.length = 20
         pt.create_template(args)
         self.validate_options(args)
+
+    def edit_args(self, name, **options):
+        args = argparse.Namespace(
+            command='edit',
+            templates=self.templates_dir.name,
+            name=name,
+            printer='P900W',
+            length='auto',
+            high_resolution=False,
+            margin=2,
+            no_feed=False,
+            full_cut=False,
+            no_cut=False,
+            mark=False,
+        )
+        for option, value in options.items():
+            setattr(args, option, value)
+        return args
+
+    def test_edit(self):
+        args = self.args()
+        args.name = 'test'
+        args.tape_width = 18
+        args.length = 20
+        pt.create_template(args)
+        # Add user content to the template
+        path = pathlib.Path(args.templates) / 'test.dxf'
+        doc = ezdxf.readfile(path)
+        (doc.modelspace()
+         .add_text('{{name}}', height=6)
+         .set_placement((0, 0)))
+        doc.saveas(path)
+
+        # Edit options, keeping the tape width and the content
+        pt.edit_template(self.edit_args(
+            'test', length='auto', margin=3, no_cut=True))
+        template = Template(argparse.Namespace(
+            templates=args.templates, template='test'))
+        # Options changed
+        self.assertEqual(template.width, 0)
+        self.assertEqual(template.options.margin, 3)
+        self.assertTrue(template.options.no_cut)
+        # Tape width cannot be changed
+        self.assertEqual(template.options.media_type, TapeType.TAPE)
+        self.assertEqual(template.options.media_width, 18)
+        # Content preserved
+        self.assertIn('name', template.placeholders)
+
+    def test_edit_nonexistent(self):
+        with self.assertRaises(pt.PrintError):
+            pt.edit_template(self.edit_args('nope', length=20))
 
     def test_printing(self):
         printed_labels = []

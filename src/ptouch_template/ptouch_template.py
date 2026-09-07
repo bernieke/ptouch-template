@@ -18,7 +18,13 @@ import ezdxf.addons.drawing.matplotlib
 import ptouch
 import matplotlib.pyplot
 
-from ptouch_template.template import Template, px_to_in, px_to_mm, mm_to_px
+from ptouch_template.template import (
+    Template,
+    TapeType,
+    px_to_in,
+    px_to_mm,
+    mm_to_px,
+)
 
 try:
     from snmp import Engine, SNMPv2c
@@ -370,6 +376,21 @@ def print_labels(args):
 
 
 def create_template(args):
+    Template(args)
+
+
+def edit_template(args):
+    # Tape/tube width is re-used from the original template
+    templates = dict(Template.list_templates(args.templates))
+    if args.name not in templates:
+        raise PrintError(f'Template {args.name} does not exist')
+    options = templates[args.name]
+    if options.media_type == TapeType.TAPE:
+        args.tape_width = options.media_width
+        args.tube_width = None
+    else:
+        args.tape_width = None
+        args.tube_width = options.media_width
     Template(args)
 
 

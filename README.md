@@ -30,7 +30,7 @@ usage: ptouch-template [-h] [--debug] [--templates TEMPLATES] [--host IP |
                        --usb [URI]]
                        [--printer {E550W,P750W,P900,P900W,P910BT,P950NW}]
                        [--no-compression]
-                       {print,create,list,describe,show-config,save-config} ...
+                       {print,create,edit,list,describe,show-config,save-config,delete} ...
 
 options:
   -h, --help            show this help message and exit
@@ -46,14 +46,16 @@ options:
   --no-compression      Disable TIFF compression
 
 Command:
-  {print,create,list,describe,show-config,save-config}
+  {print,create,edit,list,describe,show-config,save-config,delete}
     print               Print one or more labels from a template
     create              Create a template
+    edit                Edit template options
     list                List available templates
     describe            List the print options and placeholders in a template
     show-config         Show the current configuration
     save-config         Save the current arguments to the config file, so you
                         won't have to specify them next time
+    delete              Delete a template
 ```
 
 ```Bash
@@ -124,6 +126,38 @@ options:
   --no-cut              Do not cut at all between labels (e.g. for patch
                         panels)
   --mark                Add a vertical line between labels instead of cutting
+```
+
+```Bash
+> ptouch-template edit --help
+usage: ptouch-template edit [-h] --length LENGTH [--high-resolution]
+                            [--margin MM] [--no-feed] [--full-cut | --no-cut |
+                            --mark]
+                            name
+
+Edit template options.
+
+Change the options of an existing template while keeping its tape/tube width
+and its content (texts and placeholders).
+
+Options are applied exactly as for "create": any option not given reverts to
+its default (e.g. omitting a cut option restores half cuts).
+
+positional arguments:
+  name                 Name of the template to edit
+
+options:
+  -h, --help           show this help message and exit
+  --length, -l LENGTH  Label length in mm or "auto"
+  --high-resolution    Enable high resolution mode
+  --margin, -m MM      Margin in mm (default, and minimum when cutting: 2mm)
+  --no-feed            Do not feed and cut after the last label (requires
+                       either --no-cut or --mark)
+  --full-cut           Use full cuts between labels instead of half cuts
+                       (recommended for strong adhesive tapes)
+  --no-cut             Do not cut at all between labels (e.g. for patch
+                       panels)
+  --mark               Add a vertical line between labels instead of cutting
 ```
 
 ```Bash

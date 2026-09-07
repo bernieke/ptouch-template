@@ -69,9 +69,18 @@ class Options:
             height = Template.get_printable_height(
                 Printer, self.media_type, self.media_width)
             height_mm = px_to_mm(height, dpi)
-            doc = ezdxf.new('R2000', units=MM)
-            doc.appids.new('ptouch-template')
-            msp = doc.modelspace()
+            if getattr(args, 'command', None) == 'edit':
+                # Remove the option-carrying marker (rectangle or guide line)
+                doc = ezdxf.readfile(path)
+                msp = doc.modelspace()
+                for entity in msp:
+                    if entity.has_xdata('ptouch-template'):
+                        msp.delete_entity(entity)
+                        break
+            else:
+                doc = ezdxf.new('R2000', units=MM)
+                doc.appids.new('ptouch-template')
+                msp = doc.modelspace()
             if args.length == 'auto':
                 width = 0
                 marker = msp.add_line((0, 0), (0, height_mm),
@@ -192,10 +201,13 @@ class Template:
 
     def __init__(self, args: argparse.Namespace):
         if 'name' in args:
-            # Create template
+            # Create or edit template
             templates = [
                 name for name, _ in Template.list_templates(args.templates)]
-            if args.name in templates and not args.overwrite:
+            if getattr(args, 'command', None) == 'edit':
+                if args.name not in templates:
+                    raise TemplateError(f'Template {args.name} does not exist')
+            elif args.name in templates and not args.overwrite:
                 raise TemplateError(f'Template {args.name} already exists')
             self.name = args.name
             self.path = pathlib.Path(args.templates) / self.filename
