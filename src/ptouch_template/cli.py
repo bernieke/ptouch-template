@@ -7,7 +7,6 @@ import ptouch.__main__
 import xdg_base_dirs
 
 from ptouch_template.ptouch_template import (
-    MIN_FULL_CUT_WIDTH,
     Config,
     PrintError,
     create_template,
@@ -17,7 +16,7 @@ from ptouch_template.ptouch_template import (
     list_templates,
     print_labels,
 )
-from ptouch_template.template import TemplateError
+from ptouch_template.template import CUT_OPTIONS, TemplateError
 
 CONFIG_FILE = xdg_base_dirs.xdg_config_home() / 'ptouch-template.ini'
 
@@ -41,6 +40,9 @@ and, if the template has placeholders, one of:
     - for templates with a single placeholder each string prints a label
     - for templates with multiple placeholders a series of <placeholder>=<text>
       strings (you can only print a single label with multiple placeholders)
+
+The options the template was created with can be overridden for this print,
+without changing the template.
 """
 
 CREATE_DESCRIPTION = f"""{CREATE_HELP}.
@@ -56,21 +58,24 @@ For "auto" only the left edge is marked with a yellow vertical line.
 
 There will be a blank margin to either side of the printable area.
 When printing with cutting it can be no less than, and defaults to, 2mm.
-When printing with --no-cut or --mark it can be less, or even zero.
+With --cut none or --cut mark it can be less, or even zero.
 
-Default cutting behavior:
-* A half cut will be made between labels.
-  The --full-cut, --no-cut, and --mark flags can be used to change this.
-* A final full cut will be made.
-  Add the --no-feed flag to replace the cut with a vertical 1px line.
-  This flag requires either --no-cut or --mark to be provided as well.
-  You will then need to physically remove the tape and cut it manually.
+Cutting behavior:
+* --cut half makes a half cut between labels, --cut full a full cut,
+  --cut none does not cut at all, and --cut mark prints a vertical line
+  between the labels instead of cutting.
+* --feed true feeds and cuts the tape after the last label.
+  With --feed false the tape is left in the printer, is not cut,
+  and a vertical 1px line marks where to cut.
+  You will then need to remove the tape and cut it manually.
 
 Tape notes:
-* Non-laminated tapes cannot be half cut, so always use one of the cut options
-  --full-cut, --no-cut, or --mark
-* It is recommended to use --no-cut with heatshrink tapes to save the cutter
+* Non-laminated tapes cannot be half cut, so always use --cut full, none, or
+  mark
+* It is recommended to use --cut none with heatshrink tapes to save the cutter
 * And to not half cut extra strong adhesive tapes to avoid adhesive buildup
+
+Defaults: --cut half, --feed true, --margin 2mm, --high-resolution false.
 
 When editing the template:
 * Do not remove the yellow rectangle or guide line
@@ -88,7 +93,7 @@ Change the options of an existing template while keeping its tape/tube width
 and its content (texts and placeholders).
 
 Options are applied exactly as for "create": any option not given reverts to
-its default (e.g. omitting a cut option restores half cuts).
+its default (e.g. omitting --cut restores half cuts).
 """
 
 PRINTERS = list(ptouch.__main__.PRINTER_TYPES.keys())
@@ -99,6 +104,22 @@ TUBE_WIDTHS = list(ptouch.__main__.TUBE_WIDTHS.keys())
 def error(msg):
     print(msg, file=sys.stderr)
     sys.exit(1)
+
+
+def strtobool(val):
+    """Convert a string representation of truth to true (1) or false (0).
+
+    True values are 'y', 'yes', 't', 'true', 'on', and '1'; false values
+    are 'n', 'no', 'f', 'false', 'off', and '0'.  Raises ValueError if
+    'val' is anything else.
+    """
+    val = str(val).lower()
+    if val in ('y', 'yes', 't', 'true', 'on', '1'):
+        return 1
+    elif val in ('n', 'no', 'f', 'false', 'off', '0'):
+        return 0
+    else:
+        raise ValueError('invalid truth value {!r}'.format(val))
 
 
 def length(value):
@@ -122,12 +143,36 @@ def main():
         '--debug', '-d', action='store_true',
         help='Create images instead of printing them')
 
-    def add_argument(*args, value, **kwargs):
-        required = kwargs.pop('required', not value)
-        parser.add_argument(*args, required=required, default=value, **kwargs)
+    def add_options(subparser, override=False):
+        # The options stored in the template, print takes them as overrides
+        if override:
+            subparser = subparser.add_argument_group(
+                'Template options',
+                'Override the options the template was created with')
+        subparser.add_argument(
+            '--length', '-l', type=length, metavar='{MM|auto}',
+            required=not override, default=None,
+            help='Label length in mm or "auto"')
+        subparser.add_argument(
+            '--cut', choices=CUT_OPTIONS, default=None if override else 'half',
+            help=('Separate the labels with half cuts, full cuts, nothing, '
+                  'or a printed line'))
+        subparser.add_argument(
+            '--feed', type=strtobool, metavar='{true,false}',
+            default=None if override else True,
+            help='Feed and cut the tape after the last label')
+        subparser.add_argument(
+            '--margin', '-m', type=float, metavar='MM',
+            default=None if override else 2,
+            help='Margin in mm (minimum 2mm when cutting)')
+        subparser.add_argument(
+            '--high-resolution', type=strtobool, metavar='{true,false}',
+            default=None if override else bool(config.high_resolution),
+            help='Enable high resolution mode')
 
-    add_argument(
-        '--templates', '-t', value=config.templates, help='Template folder')
+    parser.add_argument(
+        '--templates', '-t', default=config.templates,
+        required=not config.templates, help='Template folder')
 
     # Add connection arguments
     conn_group = parser.add_mutually_exclusive_group(
@@ -142,14 +187,14 @@ def main():
               '(e.g., usb://:0x2086/A1B2C3D4E5)'))
 
     # Add printer arguments
-    add_argument(
-        '--printer', '-p', value=config.printer, help='Printer model',
-        choices=PRINTERS)
+    parser.add_argument(
+        '--printer', '-p', default=config.printer,
+        required=not config.printer, help='Printer model', choices=PRINTERS)
 
     # Add printer option arguments
-    add_argument(
-        '--no-compression', value=config.no_compression, action='store_true',
-        required=False, help='Disable TIFF compression')
+    parser.add_argument(
+        '--no-compression', default=config.no_compression,
+        action='store_true', help='Disable TIFF compression')
 
     # Add command subparsers
     subparsers = parser.add_subparsers(
@@ -186,6 +231,7 @@ def main():
     print_parser.add_argument(
         '--ignore-extra-columns', action='store_true',
         help='Ignore extra columns in CSV files')
+    add_options(print_parser, override=True)
 
     create_parser = subparsers.add_parser(
         'create', help=CREATE_HELP, description=CREATE_DESCRIPTION,
@@ -212,32 +258,7 @@ def main():
               '(2:1:\xa05.8/8.8/11.7/17.7/23.6, '
               '3:1:\xa05.2/9.0/11.2/21.0/31.0)'))
     for subparser in [create_parser, edit_parser]:
-        subparser.add_argument(
-            '--length', '-l', type=length, required=True, metavar='LENGTH',
-            help='Label length in mm or "auto"')
-        # Print options
-        subparser.add_argument(
-            '--high-resolution', action='store_true',
-            help='Enable high resolution mode')
-        subparser.add_argument(
-            '--margin', '-m', type=float, metavar='MM', default=2,
-            help='Margin in mm (default, and minimum when cutting: 2mm)')
-        subparser.add_argument(
-            '--no-feed', action='store_true',
-            help=('Do not feed and cut after the last label '
-                  '(requires either --no-cut or --mark)'))
-        # Cut options (mutually exclusive)
-        cut_group = subparser.add_mutually_exclusive_group()
-        cut_group.add_argument(
-            '--full-cut', action='store_true',
-            help=('Use full cuts between labels instead of half cuts '
-                  '(recommended for strong adhesive tapes)'))
-        cut_group.add_argument(
-            '--no-cut', action='store_true',
-            help='Do not cut at all between labels (e.g. for patch panels)')
-        cut_group.add_argument(
-            '--mark', action='store_true',
-            help='Add a vertical line between labels instead of cutting')
+        add_options(subparser)
 
     list_parser = subparsers.add_parser(
         'list', help=LIST_HELP, description=LIST_HELP)
@@ -271,18 +292,6 @@ def main():
             error('--copies must be at least 1')
         if args.csv and args.contents:
             error('--csv and contents are mutually exclusive')
-    elif args.command in ['create', 'edit']:
-        if args.no_feed and not (args.no_cut or args.mark):
-            error('--no-feed requires either --no-cut or --mark')
-        if not args.no_cut and not args.mark and args.margin < 2:
-            error('--margin must be at least 2mm when cutting')
-        if (
-            args.full_cut
-            and not args.length == 'auto'
-            and args.length < MIN_FULL_CUT_WIDTH.get(args.printer, 0)
-        ):
-            error(f'--full-cut requires a label length of at least '
-                  f'{MIN_FULL_CUT_WIDTH[args.printer]}mm for {args.printer}')
 
     # Execute command
     try:

@@ -60,6 +60,11 @@ _ptouch-template_print() {
         '(-c --copies)'{-c,--copies}'[Number of copies]:copies:' \
         '(-n --no-snmp-check)'{-n,--no-snmp-check}'[Do not check installed media width with SNMP]' \
         '--ignore-extra-columns[Ignore extra columns in CSV files]' \
+        '(-l --length)'{-l,--length}'[Label length in mm or "auto"]:length:(auto)' \
+        '--cut[Separate the labels with half cuts, full cuts, nothing, or a printed line]:cut:(half full none mark)' \
+        '--feed[Feed and cut the tape after the last label]:feed:(true false)' \
+        '(-m --margin)'{-m,--margin}'[Margin in mm]:margin:' \
+        '--high-resolution[Enable high resolution mode]:high resolution:(true false)' \
         '1:template:->template' \
         '*:contents:'
 
@@ -78,12 +83,10 @@ _ptouch-template_create() {
         '(-t --tape-width)'{-t,--tape-width}'[Laminated tape width in mm]:width:(3.5 6 9 12 18 24 36)' \
         '(-T --tube-width)'{-T,--tube-width}'[Heat shrink tube diameter in mm]:width:(5.8 8.8 11.7 17.7 23.6 5.2 9.0 11.2 21.0 31.0)' \
         '(-l --length)'{-l,--length}'[Label length in mm or "auto"]:length:(auto)' \
-        '--high-resolution[Enable high resolution mode]' \
+        '--cut[Separate the labels with half cuts, full cuts, nothing, or a printed line]:cut:(half full none mark)' \
+        '--feed[Feed and cut the tape after the last label]:feed:(true false)' \
         '(-m --margin)'{-m,--margin}'[Margin in mm]:margin:' \
-        '--no-feed[Do not feed and cut after the last label]' \
-        '--full-cut[Use full cuts between labels instead of half cuts]' \
-        '--no-cut[Do not cut at all between labels]' \
-        '--mark[Add a vertical line between labels instead of cutting]' \
+        '--high-resolution[Enable high resolution mode]:high resolution:(true false)' \
         ':template name:'
 }
 
@@ -94,12 +97,10 @@ _ptouch-template_edit() {
 
     _arguments -C \
         '(-l --length)'{-l,--length}'[Label length in mm or "auto"]:length:(auto)' \
-        '--high-resolution[Enable high resolution mode]' \
+        '--cut[Separate the labels with half cuts, full cuts, nothing, or a printed line]:cut:(half full none mark)' \
+        '--feed[Feed and cut the tape after the last label]:feed:(true false)' \
         '(-m --margin)'{-m,--margin}'[Margin in mm]:margin:' \
-        '--no-feed[Do not feed and cut after the last label]' \
-        '--full-cut[Use full cuts between labels instead of half cuts]' \
-        '--no-cut[Do not cut at all between labels]' \
-        '--mark[Add a vertical line between labels instead of cutting]' \
+        '--high-resolution[Enable high resolution mode]:high resolution:(true false)' \
         '1:template:->template'
 
     case "$state" in

@@ -4,7 +4,7 @@ build-backend = 'uv_build'
 
 [project]
 name = 'ptouch-template'
-version = "1.2.0"
+version = '2.0.0'
 readme = 'README.md'
 requires-python = '>= 3.12'
 license = {text='MIT'}
@@ -25,11 +25,11 @@ repository = 'https://github.com/bernieke/ptouch-template'
 ptouch-template = 'ptouch_template.cli:main'
 
 [project.optional-dependencies]
-usb = ["pyusb"]
-snmp = ["snmp"]
+usb = ['pyusb']
+snmp = ['snmp']
 
 [dependency-groups]
-dev = ["ruff", "pre-commit"]
+dev = ['ruff', 'pre-commit']
 
 [tool.uv.build-backend]
 data = {data = 'data'}

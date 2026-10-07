@@ -19,11 +19,13 @@ import ptouch
 import matplotlib.pyplot
 
 from ptouch_template.template import (
+    MIN_FULL_CUT_WIDTH,
     Template,
     TapeType,
+    mm_to_px,
     px_to_in,
     px_to_mm,
-    mm_to_px,
+    validate_options,
 )
 
 try:
@@ -57,13 +59,13 @@ PIN_CONFIGS[ptouch.tape.Tape24mm].left_pins = 128
 PIN_CONFIGS[ptouch.tape.Tape24mm].right_pins = 112
 PIN_CONFIGS[ptouch.tape.Tape36mm].left_pins = 58
 PIN_CONFIGS[ptouch.tape.Tape36mm].right_pins = 48
-# Labels with a width smaller than this cannot be printed with a full cut
-MIN_FULL_CUT_WIDTH = {
-    'P900W': 18.06,
-}
 
 
 class PrintError(Exception):
+    pass
+
+
+class ClipError(PrintError):
     pass
 
 
@@ -183,6 +185,24 @@ def create_label(template, contents):
         # An auto label with no drawable content is skipped
         matplotlib.pyplot.close(figure)
         return None
+    # Check for clipping
+    limits = axis.dataLim
+    tolerance = px_to_mm(1, template.dpi)
+    if (
+        limits.x0 < -tolerance
+        or limits.y0 < -tolerance
+        or limits.x1 > px_to_mm(width, template.dpi) + tolerance
+        or limits.y1 > px_to_mm(template.height, template.dpi) + tolerance
+    ):
+        matplotlib.pyplot.close(figure)
+        if not isinstance(contents, dict):
+            contents = dict(zip(template.placeholders, [contents]))
+        message = 'Label does not fit'
+        if contents:
+            message += ': ' + ', '.join(
+                f'{placeholder}={value}'
+                for placeholder, value in contents.items())
+        raise ClipError(message)
     figure.set_size_inches(px_to_in(width, template.dpi), height_in)
     axis.set_xlim(0, px_to_mm(width, template.dpi))
     axis.set_ylim(0, px_to_mm(template.height, template.dpi))
@@ -212,6 +232,7 @@ def create_mark(template):
 
 def print_labels(args):
     template = Template(args)
+    validate_options(template.options, template.length)
 
     # Create connection
     if args.usb is True:
@@ -266,7 +287,6 @@ def print_labels(args):
             raise PrintError(
                 'Could not parse contents, when more than one argument '
                 'it needs to be a list of <key>=<value> pairs')
-    contents = contents * args.copies
 
     # Create print queue [(image, feed, auto_cut, half_cut), ...]
     # With:
@@ -278,14 +298,27 @@ def print_labels(args):
     print_queue = []
 
     # Render the labels
-    labels = [create_label(template, _contents) for _contents in contents]
-    # Drop empty labels
-    labels = [label for label in labels if label is not None]
+    labels = []
+    clipped = False
+    for _contents in contents:
+        try:
+            label = create_label(template, _contents)
+        except ClipError as e:
+            print(e.args[0], file=sys.stderr)
+            clipped = True
+            continue
+        # Ignore empty labels
+        if label is not None:
+            labels.append(label)
+    if clipped:
+        raise PrintError('Not printing, some labels do not fit')
+    labels = [label.copy() for _ in range(args.copies) for label in labels]
+
     # When not cutting we concatenate the labels with fillers inbetween
-    if template.options.no_cut or template.options.mark:
+    if template.options.cut in ['none', 'mark']:
         if labels:
             if template.options.margin:
-                if template.options.no_cut:
+                if template.options.cut == 'none':
                     filler = create_blank(template)
                 else:
                     filler = create_mark(template)
@@ -294,7 +327,7 @@ def print_labels(args):
             total_width = sum(label.width for label in labels)
             if filler:
                 total_width += filler.width * (len(labels) - 1)
-                if template.options.no_feed:
+                if not template.options.feed:
                     total_width += math.ceil(filler.width / 2)
             size = (total_width, template.height)
             image = PIL.Image.new('RGB', size=size, color=(255, 255, 255))
@@ -302,8 +335,8 @@ def print_labels(args):
             for n, label in enumerate(labels, start=1):
                 is_first = (n == 1)
                 is_last = (n == len(labels))
-                # For --mark draw a 2px line between labels when no margin
-                if filler is None and template.options.mark:
+                # For --cut mark draw a 2px line between labels when no margin
+                if filler is None and template.options.cut == 'mark':
                     if not is_first:
                         PIL.ImageDraw.Draw(label).line(
                             [(0, 0), (0, label.height)], fill=0, width=1)
@@ -317,35 +350,50 @@ def print_labels(args):
                 if not is_last and filler:
                     image.paste(filler, (start, 0))
                     start += filler.width
-            # If --no-feed draw a 1px cut line at the end
-            if template.options.no_feed:
+            # If not feeding draw a 1px cut line at the end
+            if not template.options.feed:
                 PIL.ImageDraw.Draw(image).line(
                     [(image.width - 1, 0), (image.width - 1, image.height)],
                     fill=0, width=1)
-            feed = not template.options.no_feed
             auto_cut = half_cut = False
-            print_queue.append((image, feed, auto_cut, half_cut))
+            print_queue.append(
+                (image, template.options.feed, auto_cut, half_cut))
     else:
         # Otherwise we add the label to the print queue with the proper flags
+        # A full cut requires a minimum label length
+        min_width = MIN_FULL_CUT_WIDTH.get(template.options.printer, 0)
+        min_px = mm_to_px(min_width, template.dpi)
+        if template.options.cut == 'full' and any(
+            label.width < min_px for label in labels
+        ):
+            print(f'Padding labels to {min_width}mm, the minimum full cut '
+                  f'length for {template.options.printer}', file=sys.stderr)
         for n, label in enumerate(labels, start=1):
             is_last = (n == len(labels))
-            if template.options.full_cut:
-                # A full cut requires a minimum label length
-                min_width = MIN_FULL_CUT_WIDTH.get(template.options.printer, 0)
-                min_px = mm_to_px(min_width, template.dpi)
-                if label.width < min_px:
-                    size = (min_px, template.height)
-                    color = (255, 255, 255)
-                    padded = PIL.Image.new(mode='RGB', size=size, color=color)
-                    padded.paste(label, (0, 0))
-                    label = padded
-            feed = is_last
-            auto_cut = template.options.full_cut
+            width = label.width
+            if template.options.cut == 'full':
+                width = max(width, min_px)
+            if is_last and not template.options.feed:
+                # Leave room for the margin and the manual cut mark
+                width += mm_to_px(template.options.margin, template.dpi)
+            if width > label.width:
+                size = (width, template.height)
+                color = (255, 255, 255)
+                padded = PIL.Image.new(mode='RGB', size=size, color=color)
+                padded.paste(label, (0, 0))
+                label = padded
+            if is_last and not template.options.feed:
+                # Mark where to cut manually
+                PIL.ImageDraw.Draw(label).line(
+                    [(label.width - 1, 0), (label.width - 1, label.height)],
+                    fill=0, width=1)
+            feed = is_last and template.options.feed
+            auto_cut = template.options.cut == 'full'
             half_cut = not auto_cut
             print_queue.append((label, feed, auto_cut, half_cut))
 
     # When not cutting we pass the default margin (print won't accept less)
-    if template.options.no_cut or template.options.mark:
+    if template.options.cut in ['none', 'mark']:
         margin_mm = 2
     else:
         margin_mm = template.options.margin
@@ -423,6 +471,8 @@ def describe(args):
     print('OPTIONS')
     print('───────')
     for option, value in vars(template.options).items():
+        if isinstance(value, bool):
+            value = 'true' if value else 'false'
         print(f'{option}: {value}')
     print()
     print('PLACEHOLDERS')

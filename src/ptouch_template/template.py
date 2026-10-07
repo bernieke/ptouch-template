@@ -6,6 +6,7 @@ import math
 import os
 import pathlib
 import re
+import sys
 
 import ezdxf
 import ezdxf.addons.drawing.layout
@@ -18,6 +19,14 @@ TUBE_WIDTHS = list(ptouch.__main__.TUBE_WIDTHS.keys())
 MM = ezdxf.addons.drawing.layout.Units.mm
 
 TEXT_ENTITIES = 'TEXT MTEXT ATTRIB ATTDEF'
+
+SCHEMA_VERSION = 2
+
+CUT_OPTIONS = ['half', 'full', 'none', 'mark']
+
+MIN_FULL_CUT_WIDTH = {
+    'P900W': 18.06,
+}
 
 
 def px_to_mm(px, dpi):
@@ -41,16 +50,28 @@ class TapeType(enum.Enum):
     TUBE = 2
 
 
+def validate_options(options, length):
+    if options.margin < 2 and options.cut not in ['none', 'mark']:
+        raise TemplateError('--margin must be at least 2mm when cutting')
+    if (
+        options.cut == 'full'
+        and not length == 'auto'
+        and length < MIN_FULL_CUT_WIDTH.get(options.printer, 0)
+    ):
+        raise TemplateError(
+            f'--cut full requires a label length of at least '
+            f'{MIN_FULL_CUT_WIDTH[options.printer]}mm '
+            f'for {options.printer}')
+
+
 class Options:
     printer: str
     media_type: TapeType
     media_width: float
     high_resolution: bool = False
     margin: float = 2
-    full_cut: bool = False
-    no_cut: bool = False
-    no_feed: bool = False
-    mark: bool = False
+    cut: str = 'half'
+    feed: bool = True
 
     def __init__(self, path, args=None):
         if args:
@@ -106,6 +127,7 @@ class Options:
                     xdata[arg] = value
             with ezdxf.entities.xdata.XDataUserDict.entity(
                 marker, name='template', appid='ptouch-template') as xdata:
+                xdata['version'] = SCHEMA_VERSION
                 xdata['width'] = width
                 xdata['height'] = height
                 xdata['dpi'] = dpi
@@ -118,6 +140,8 @@ class Options:
                         value = None
                     elif arg == 'media_type':
                         value = TapeType(value)
+                    else:
+                        value = self.__annotations__[arg](value)
                     setattr(self, arg, value)
 
 
@@ -138,7 +162,11 @@ class Template:
             if not filename.endswith('.dxf'):
                 continue
             name = filename[:-4]
-            opt = Options(pathlib.Path(location) / filename)
+            try:
+                opt = Options(pathlib.Path(location) / filename)
+            except TemplateError as e:
+                print(e.args[0], file=sys.stderr)
+                continue
             templates.append((name, opt))
         return templates
 
@@ -193,6 +221,15 @@ class Template:
             if not entity.has_xdata('ptouch-template'):
                 continue
             with ezdxf.entities.xdata.XDataUserDict.entity(
+                entity, name='template', appid='ptouch-template'
+            ) as xdata:
+                version = xdata.get('version')
+            if not version == SCHEMA_VERSION:
+                raise TemplateError(
+                    f'{path} does not match template schema version '
+                    f'{SCHEMA_VERSION}, upgrade it with: '
+                    f'python -m ptouch_template.migrations.upgrade {path}')
+            with ezdxf.entities.xdata.XDataUserDict.entity(
                 entity, name=name, appid='ptouch-template'
             ) as xdata:
                 return dict(xdata)
@@ -202,6 +239,7 @@ class Template:
     def __init__(self, args: argparse.Namespace):
         if 'name' in args:
             # Create or edit template
+            validate_options(args, args.length)
             templates = [
                 name for name, _ in Template.list_templates(args.templates)]
             if getattr(args, 'command', None) == 'edit':
@@ -238,9 +276,22 @@ class Template:
             self.width = xdata['width']
             self.height = xdata['height']
             self.dpi = xdata['dpi']
+            # Command line overrides of the stored options
+            for option in ['high_resolution', 'margin', 'cut', 'feed']:
+                value = getattr(args, option, None)
+                if value is not None:
+                    setattr(self.options, option, value)
+            length = getattr(args, 'length', None)
+            if length is not None:
+                self.width = (0 if length == 'auto'
+                              else mm_to_px(length, self.dpi))
 
     def __str__(self):
         return self.name if self.name else str(self.path)
+
+    @property
+    def length(self):
+        return 'auto' if not self.width else px_to_mm(self.width, self.dpi)
 
     @property
     def Printer(self):
