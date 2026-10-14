@@ -6,6 +6,7 @@ import csv
 import io
 import math
 import pathlib
+import re
 import socket
 import sys
 import time
@@ -164,6 +165,13 @@ def create_label(template, contents):
             else:
                 value = contents
             replace(entity, raw_placeholders, value)
+        if entity.dxftype() == 'MTEXT' and not entity.dxf.width:
+            # Without a width the text is wrapped at a width estimated from
+            # char_height, which has to match the inline height overrides
+            heights = [float(height) for height
+                       in re.findall(r'\\H([0-9.]+);', entity.dxf.text)]
+            if heights and max(heights) > entity.dxf.char_height:
+                entity.dxf.char_height = max(heights)
     # Remove the yellow rectangle before rendering the image
     for entity in msp:
         if entity.has_xdata('ptouch-template'):

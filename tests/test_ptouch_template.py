@@ -477,6 +477,25 @@ class PtouchTemplateTestCase(unittest.TestCase):
         with self.assertRaises(pt.ClipError):
             pt.create_label(template, 'high')
 
+    def test_mtext_height_override(self):
+        # The inline height override has to drive the text layout, or the
+        # text is wrapped at a width estimated from the smaller char_height
+        sizes = []
+        for char_height in [1, 4]:
+            path = self.create(length='auto')
+            doc = ezdxf.readfile(path)
+            doc.modelspace().add_mtext(
+                '\\H4;one two three four\\Pfive six seven eight',
+                dxfattribs={
+                    'char_height': char_height,
+                    'attachment_point': 7,
+                    'insert': (0, 2),
+                })
+            doc.saveas(path)
+            template = Template(self.print_args())
+            sizes.append(pt.create_label(template, None).size)
+        self.assertEqual(sizes[0], sizes[1])
+
 
 if __name__ == '__main__':
     unittest.main(buffer=True)
